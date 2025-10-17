@@ -45,6 +45,8 @@ func (s Service) String() string {
                        Aliases:  %s
                        IPs:      %s
                        TTL:      %d
+                       Port:     %d
+                       SRVs      %v
                        Provider: %s
         `, s.Name, s.Aliases, s.IPs, s.TTL, s.Port, s.SRVs, s.Provider)
 }
