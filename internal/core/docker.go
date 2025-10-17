@@ -308,6 +308,21 @@ func overrideFromLabels(in *servers.Service, labels map[string]string) (out *ser
 			in.Name = v
 		}
 
+		if k == "com.dnsdock.srv" {
+			if port, err := strconv.Atoi(v); err == nil {
+				in.Port = port
+			}
+		}
+
+		if srv, ok := strings.CutPrefix(k, "com.dnsdock.srv#"); ok {
+			if port, err := strconv.Atoi(v); err == nil {
+				if in.SRVs == nil {
+					in.SRVs = make(map[string]int)
+				}
+				in.SRVs[srv] = port
+			}
+		}
+
 		if k == "com.dnsdock.tags" {
 			if len(v) == 0 {
 				in.Name = ""
