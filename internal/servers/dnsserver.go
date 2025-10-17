@@ -28,6 +28,8 @@ type Service struct {
 	IPs     []net.IP
 	TTL     int
 	Aliases []string
+	Port    int
+	SRVs    map[string]int
 
 	// Provider tracks the creator of a service
 	Provider string `json:"-"`
@@ -44,7 +46,7 @@ func (s Service) String() string {
                        IPs:      %s
                        TTL:      %d
                        Provider: %s
-        `, s.Name, s.Aliases, s.IPs, s.TTL, s.Provider)
+        `, s.Name, s.Aliases, s.IPs, s.TTL, s.Port, s.SRVs, s.Provider)
 }
 
 // ServiceListProvider represents the entrypoint to get containers
@@ -115,7 +117,8 @@ func (s *DNSServer) AddService(id string, service Service) (err error) {
 			s.mux.HandleFunc(alias+".", s.handleRequest)
 		}
 	} else {
-		return fmt.Errorf("Service '%s' ignored: No IP provided:", id)
+		logger.Warningf("Service '%s' ignored: No IP provided:", service.Name)
+		return nil
 	}
 
 	return nil
@@ -248,6 +251,8 @@ func (s *DNSServer) handleForward(w dns.ResponseWriter, r *dns.Msg) {
 func (s *DNSServer) makeServiceA(n string, service *Service) dns.RR {
 	rr := new(dns.A)
 
+func (s *DNSServer) createSRV(prefix string, port int, n string, service *Service) dns.RR {
+	rr := new(dns.SRV)
 	var ttl int
 	if service.TTL != -1 {
 		ttl = service.TTL
@@ -255,23 +260,46 @@ func (s *DNSServer) makeServiceA(n string, service *Service) dns.RR {
 		ttl = s.config.Ttl
 	}
 
+	name := n
+
+	if !strings.HasSuffix(prefix, ".") {
+		split := strings.Split(prefix, ".")
+		last := split[len(split)-1]
+		name = last
+		name = strings.Replace(n, service.Name, service.Name+"-"+name, 1)
+	}
+
 	rr.Hdr = dns.RR_Header{
-		Name:   n,
-		Rrtype: dns.TypeA,
+		Name:   name,
+		Rrtype: dns.TypeSRV,
 		Class:  dns.ClassINET,
 		Ttl:    uint32(ttl),
 	}
 
-	if len(service.IPs) != 0 {
-		if len(service.IPs) > 1 {
-			logger.Warningf("Multiple IP address found for container '%s'. Only the first address will be used", service.Name)
-		}
-		rr.A = service.IPs[0]
-	} else {
-		logger.Errorf("No valid IP address found for container '%s' ", service.Name)
-	}
+	rr.Port = uint16(port)
+	rr.Target = n
+	rr.Priority = 10
+	rr.Weight = 5
 
 	return rr
+}
+
+func (s *DNSServer) makeServiceSRV(n string, service *Service) []dns.RR {
+	if service.Port == 0 && len(service.SRVs) == 0 {
+		return []dns.RR{}
+	}
+
+	rrs := make([]dns.RR, 0)
+
+	if service.Port > 0 {
+		rrs = append(rrs, s.createSRV("_http._tcp.", service.Port, n, service))
+	}
+
+	for prefix, port := range service.SRVs {
+		rrs = append(rrs, s.createSRV(prefix, port, n, service))
+	}
+
+	return rrs
 }
 
 func (s *DNSServer) makeServiceMX(n string, service *Service) dns.RR {
@@ -338,6 +366,12 @@ func (s *DNSServer) handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 			rr = s.makeServiceA(r.Question[0].Name, service)
 		case dns.TypeMX:
 			rr = s.makeServiceMX(r.Question[0].Name, service)
+		case dns.TypeSRV:
+			rrs := s.makeServiceSRV(r.Question[0].Name, service)
+			if len(rrs) > 0 {
+				m.Answer = append(m.Answer, rrs...)
+			}
+
 		default:
 			// this query type isn't supported, but we do have
 			// a record with this name. Per RFC 4074 sec. 3, we

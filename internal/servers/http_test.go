@@ -37,13 +37,13 @@ func TestServiceRequests(t *testing.T) {
 		{"GET", "/services/foo", "", "", 404},
 		{"PUT", "/services/foo", `{"name": "foo"}`, "", 500},
 		{"PUT", "/services/foo", `{"name": "foo", "image": "bar", "ips": ["127.0.0.1"], "aliases": ["foo.docker"]}`, "", 200},
-		{"GET", "/services/foo", "", `{"Name":"foo","Image":"bar","IPs":["127.0.0.1"],"TTL":-1,"Aliases":["foo.docker"]}`, 200},
+		{"GET", "/services/foo", "", `{"Name":"foo","Image":"bar","IPs":["127.0.0.1"],"TTL":-1,"Aliases":["foo.docker"],"Port":0,"SRVs":null}`, 200},
 		{"PUT", "/services/boo", `{"name": "baz", "image": "bar", "ips": ["127.0.0.2"]}`, "", 200},
-		{"GET", "/services", "", `{"boo":{"Name":"baz","Image":"bar","IPs":["127.0.0.2"],"TTL":-1,"Aliases":null},"foo":{"Name":"foo","Image":"bar","IPs":["127.0.0.1"],"TTL":-1,"Aliases":["foo.docker"]}}`, 200},
+		{"GET", "/services", "", `{"boo":{"Name":"baz","Image":"bar","IPs":["127.0.0.2"],"TTL":-1,"Aliases":null,"Port":0,"SRVs":null},"foo":{"Name":"foo","Image":"bar","IPs":["127.0.0.1"],"TTL":-1,"Aliases":["foo.docker"],"Port":0,"SRVs":null}}`, 200},
 		{"PATCH", "/services/boo", `{"name": "bar", "ttl": 20, "image": "bar"}`, "", 200},
-		{"GET", "/services/boo", "", `{"Name":"bar","Image":"bar","IPs":["127.0.0.2"],"TTL":20,"Aliases":null}`, 200},
+		{"GET", "/services/boo", "", `{"Name":"bar","Image":"bar","IPs":["127.0.0.2"],"TTL":20,"Aliases":null,"Port":0,"SRVs":null}`, 200},
 		{"DELETE", "/services/foo", ``, "", 200},
-		{"GET", "/services", "", `{"boo":{"Name":"bar","Image":"bar","IPs":["127.0.0.2"],"TTL":20,"Aliases":null}}`, 200},
+		{"GET", "/services", "", `{"boo":{"Name":"bar","Image":"bar","IPs":["127.0.0.2"],"TTL":20,"Aliases":null,"Port":0,"SRVs":null}}`, 200},
 	}
 
 	for _, input := range tests {
