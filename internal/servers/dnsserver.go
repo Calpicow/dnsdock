@@ -250,8 +250,37 @@ func (s *DNSServer) handleForward(w dns.ResponseWriter, r *dns.Msg) {
 	}
 }
 
-func (s *DNSServer) makeServiceA(n string, service *Service) dns.RR {
-	rr := new(dns.A)
+func (s *DNSServer) makeServiceA(n string, service *Service) []dns.RR {
+	rrs := []dns.RR{}
+
+	for _, ip := range service.IPs {
+		rr := new(dns.A)
+
+		var ttl int
+		if service.TTL != -1 {
+			ttl = service.TTL
+		} else {
+			ttl = s.config.Ttl
+		}
+
+		rr.Hdr = dns.RR_Header{
+			Name:   n,
+			Rrtype: dns.TypeA,
+			Class:  dns.ClassINET,
+			Ttl:    uint32(ttl),
+		}
+		rr.A = ip
+
+		rrs = append(rrs, rr)
+
+	}
+
+	if len(service.IPs) == 0 {
+		logger.Errorf("No valid IP address found for container '%s' ", service.Name)
+	}
+
+	return rrs
+}
 
 func (s *DNSServer) createSRV(prefix string, port int, n string, service *Service) dns.RR {
 	rr := new(dns.SRV)
@@ -365,7 +394,10 @@ func (s *DNSServer) handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 		var rr dns.RR
 		switch r.Question[0].Qtype {
 		case dns.TypeA:
-			rr = s.makeServiceA(r.Question[0].Name, service)
+			rrs := s.makeServiceA(r.Question[0].Name, service)
+			if len(rrs) > 0 {
+				m.Answer = append(m.Answer, rrs...)
+			}
 		case dns.TypeMX:
 			rr = s.makeServiceMX(r.Question[0].Name, service)
 		case dns.TypeSRV:
@@ -388,8 +420,9 @@ func (s *DNSServer) handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 		}
 
 		logger.Debugf("DNS record found for query '%s'", query)
-
-		m.Answer = append(m.Answer, rr)
+		if rr != nil {
+			m.Answer = append(m.Answer, rr)
+		}
 	}
 
 	// We didn't find a record corresponding to the query
@@ -506,12 +539,11 @@ func (s *DNSServer) queryServices(query string) chan *Service {
 			// create the name for this service, skip empty strings
 			test := []string{}
 			// todo: add some cache to avoid calculating this every time
-			if len(service.Name) > 0 {
-				test = append(test, strings.Split(strings.ToLower(service.Name), ".")...)
-			}
-
 			if len(service.Image) > 0 {
 				test = append(test, strings.Split(service.Image, ".")...)
+			}
+			if len(service.Name) > 0 {
+				test = append(test, strings.Split(strings.ToLower(service.Name), ".")...)
 			}
 
 			test = append(test, s.config.Domain...)
