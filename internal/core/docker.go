@@ -59,7 +59,7 @@ func (d *DockerManager) Start() (err error) {
 		perr := backoff.RetryNotify(func() error {
 			return d.run(ctx)
 		}, backoff.WithContext(backoff.NewExponentialBackOff(), ctx), func(err error, d time.Duration) {
-			logger.Errorf("Error running docker manager, retrying in %v: %s", d, err)
+			logger.Errorf("Error running docker manager, retrying in %d: %s", d.Seconds(), err)
 		})
 		if perr != nil {
 			logger.Errorf("Unrecoverable error running docker manager: %s", perr)
@@ -97,7 +97,7 @@ func (d *DockerManager) run(ctx context.Context) error {
 		if _, ok := services[id]; !ok && srv.Provider == DockerProvider {
 			err := d.list.RemoveService(id)
 			if err != nil {
-				return fmt.Errorf("error removing service: %w", err)
+				logger.Warningf("error removing service: %w", err)
 			}
 		}
 	}
@@ -290,7 +290,7 @@ func splitEnv(in []string) (out map[string]string) {
 		}
 		out[strings.Trim(parts[0], " ")] = value
 	}
-	return
+	return out
 }
 
 func overrideFromLabels(in *servers.Service, labels map[string]string) (out *servers.Service) {
@@ -371,7 +371,7 @@ func overrideFromLabels(in *servers.Service, labels map[string]string) (out *ser
 		in.Image = in.Image + "." + region
 	}
 	out = in
-	return
+	return out
 }
 
 func overrideFromEnv(in *servers.Service, env map[string]string) (out *servers.Service) {
@@ -437,5 +437,5 @@ func overrideFromEnv(in *servers.Service, env map[string]string) (out *servers.S
 		in.Image = in.Image + "." + region
 	}
 	out = in
-	return
+	return out
 }
