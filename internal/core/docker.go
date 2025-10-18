@@ -72,7 +72,7 @@ func (d *DockerManager) Start() (err error) {
 
 func (d *DockerManager) run(ctx context.Context) error {
 	messageChan, errorChan := d.client.Events(ctx, types.EventsOptions{
-		Filters: filters.NewArgs(filters.Arg("type", "container")),
+		Filters: filters.NewArgs(filters.Arg("type", "container"), filters.Arg("type", "network")),
 	})
 
 	containers, err := d.client.ContainerList(ctx, container.ListOptions{})
@@ -133,7 +133,12 @@ func (d *DockerManager) handler(m events.Message) error {
 		return d.destroyHandler(m)
 	case "rename":
 		return d.renameHandler(m)
+	case "connect":
+		return d.networkHandler(m)
+	case "disconnect":
+		return d.networkHandler(m)
 	}
+
 	return nil
 }
 
@@ -180,6 +185,24 @@ func (d *DockerManager) stopHandler(m events.Message) error {
 	return nil
 }
 
+func (d *DockerManager) networkHandler(m events.Message) error {
+	logger.Infof("Networks changed of container '%s'", m.Actor.Attributes["container"])
+	id := m.Actor.Attributes["container"]
+	err := d.list.RemoveService(id)
+	if err != nil {
+		return fmt.Errorf("error removing service: %w", err)
+	}
+	service, err := d.getService(id)
+	if err != nil {
+		return fmt.Errorf("error getting service: %w", err)
+	}
+	res := d.list.AddService(id, *service)
+	if res != nil {
+		return fmt.Errorf("error adding service: %w", err)
+	}
+	return nil
+}
+
 func (d *DockerManager) renameHandler(m events.Message) error {
 	logger.Debugf("Renamed container '%s'", m.ID)
 	err := d.list.RemoveService(m.ID)
@@ -192,7 +215,7 @@ func (d *DockerManager) renameHandler(m events.Message) error {
 	}
 	res := d.list.AddService(m.ID, *service)
 	if res != nil {
-		return fmt.Errorf("error removing service: %w", err)
+		return fmt.Errorf("error adding service: %w", err)
 	}
 	return nil
 }
