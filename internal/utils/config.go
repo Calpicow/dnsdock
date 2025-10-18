@@ -67,6 +67,7 @@ type Config struct {
 	Verbose     bool
 	Quiet       bool
 	All         bool
+	IpPrefixes  []string
 }
 
 // NewConfig creates a new config
@@ -97,6 +98,6 @@ func NewConfig() *Config {
 		All:         false,
 		ForceTtl:    false,
 		Ttl:         0,
+		IpPrefixes:  []string{},
 	}
-
 }

@@ -38,8 +38,9 @@ type Service struct {
 // NewService creates a new service
 func NewService(provider string) (s *Service) {
 	s = &Service{TTL: -1, Provider: provider}
-	return
+	return s
 }
+
 func (s Service) String() string {
 	return fmt.Sprintf(` Name:     %s
                        Aliases:  %s
@@ -111,7 +112,7 @@ func (s *DNSServer) AddService(id string, service Service) (err error) {
 
 		s.services[id] = &service
 
-		logger.Debugf(`Added service: '%s'
+		logger.Infof(`Added service: '%s'
                       %s`, id, service)
 
 		for _, alias := range service.Aliases {
@@ -183,7 +184,6 @@ func (s *DNSServer) listDomains(service *Service) chan string {
 	c := make(chan string)
 
 	go func() {
-
 		if service.Image == "" {
 			c <- service.Name + "." + s.config.Domain.String() + "."
 		} else {
@@ -204,7 +204,6 @@ func (s *DNSServer) listDomains(service *Service) chan string {
 }
 
 func (s *DNSServer) handleForward(w dns.ResponseWriter, r *dns.Msg) {
-
 	logger.Debugf("Using DNS forwarding for '%s'", r.Question[0].Name)
 	logger.Debugf("Forwarding DNS nameservers: %s", s.config.Nameservers.String())
 
@@ -250,10 +249,50 @@ func (s *DNSServer) handleForward(w dns.ResponseWriter, r *dns.Msg) {
 	}
 }
 
-func (s *DNSServer) makeServiceA(n string, service *Service) []dns.RR {
+func askerInSameNet(asker string, ip string) int {
+	if asker == "127.0.0.1" {
+		return 1
+	}
+	a := strings.Split(asker, ".")
+	i := strings.Split(ip, ".")
+
+	if a[0] == i[0] && a[1] == i[1] && a[2] == i[2] {
+		return 3
+	}
+
+	if a[0] == i[0] && a[1] == i[1] {
+		return 2
+	}
+
+	if a[0] == i[0] {
+		return 1
+	}
+
+	return 0
+}
+
+func (s *DNSServer) makeServiceA(n string, asker *net.Addr, service *Service) []dns.RR {
 	rrs := []dns.RR{}
+	aip := (*asker).String()
+	subnet := 0
+	askerIp := strings.Split(aip, ":")[0]
 
 	for _, ip := range service.IPs {
+		foundPrefix := false
+
+		for _, p := range s.config.IpPrefixes {
+			if strings.HasPrefix(ip.String(), p) {
+				foundPrefix = true
+				break
+			}
+		}
+
+		sn := askerInSameNet(askerIp, ip.String())
+
+		if !foundPrefix && len(s.config.IpPrefixes) > 0 && sn == 0 {
+			continue
+		}
+
 		rr := new(dns.A)
 
 		var ttl int
@@ -271,7 +310,12 @@ func (s *DNSServer) makeServiceA(n string, service *Service) []dns.RR {
 		}
 		rr.A = ip
 
-		rrs = append(rrs, rr)
+		if sn > subnet {
+			rrs = append([]dns.RR{rr}, rrs...)
+			subnet = sn
+		} else {
+			rrs = append(rrs, rr)
+		}
 
 	}
 
@@ -297,7 +341,7 @@ func (s *DNSServer) createSRV(prefix string, port int, n string, service *Servic
 		split := strings.Split(prefix, ".")
 		last := split[len(split)-1]
 		name = last
-		name = strings.Replace(n, service.Name, service.Name+"-"+name, 1)
+		name = strings.Replace(n, service.Name, name, 1)
 	}
 
 	rr.Hdr = dns.RR_Header{
@@ -394,7 +438,8 @@ func (s *DNSServer) handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 		var rr dns.RR
 		switch r.Question[0].Qtype {
 		case dns.TypeA:
-			rrs := s.makeServiceA(r.Question[0].Name, service)
+			ra := w.RemoteAddr()
+			rrs := s.makeServiceA(r.Question[0].Name, &ra, service)
 			if len(rrs) > 0 {
 				m.Answer = append(m.Answer, rrs...)
 			}
@@ -542,6 +587,7 @@ func (s *DNSServer) queryServices(query string) chan *Service {
 			if len(service.Image) > 0 {
 				test = append(test, strings.Split(service.Image, ".")...)
 			}
+
 			if len(service.Name) > 0 {
 				test = append(test, strings.Split(strings.ToLower(service.Name), ".")...)
 			}
@@ -554,18 +600,16 @@ func (s *DNSServer) queryServices(query string) chan *Service {
 
 			// check aliases
 			for _, alias := range service.Aliases {
-				if isPrefixQuery(query, strings.Split(alias, ".")) {
+				if isPrefixQuery(query, strings.Split(alias, ".")) || isPrefixQuery(query, append(strings.Split(alias, "."), s.config.Domain...)) {
 					c <- service
 				}
 			}
 		}
 
 		close(c)
-
 	}()
 
 	return c
-
 }
 
 // Checks for a partial match for container SHA and outputs it if found.
@@ -574,7 +618,7 @@ func (s *DNSServer) getExpandedID(in string) (out string, err error) {
 
 	// Hard to make a judgement on small image names.
 	if len(in) < 4 {
-		return
+		return out, err
 	}
 
 	re, err := regexp.Compile("^[0-9a-f]+$")
@@ -583,7 +627,7 @@ func (s *DNSServer) getExpandedID(in string) (out string, err error) {
 	}
 
 	if isHex := re.MatchString(in); !isHex {
-		return
+		return out, err
 	}
 
 	for id := range s.services {
@@ -591,12 +635,12 @@ func (s *DNSServer) getExpandedID(in string) (out string, err error) {
 			if isHex := re.MatchString(id); isHex {
 				if strings.HasPrefix(id, in) {
 					out = id
-					return
+					return out, err
 				}
 			}
 		}
 	}
-	return
+	return out, err
 }
 
 // TTL is used from config so that not-found result responses are not cached
@@ -609,7 +653,8 @@ func (s *DNSServer) createSOA() []dns.RR {
 			Name:   dom,
 			Rrtype: dns.TypeSOA,
 			Class:  dns.ClassINET,
-			Ttl:    uint32(s.config.Ttl)},
+			Ttl:    uint32(s.config.Ttl),
+		},
 		Ns:      "dnsdock." + dom,
 		Mbox:    "dnsdock.dnsdock." + dom,
 		Serial:  uint32(time.Now().Truncate(time.Hour).Unix()),

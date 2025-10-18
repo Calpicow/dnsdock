@@ -10,22 +10,24 @@ package core
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
+
 	"github.com/aacebedo/dnsdock/internal/utils"
 	"github.com/alecthomas/kingpin/v2"
-	"strconv"
 )
 
 // CommandLine structure handling parameter parsing
-type CommandLine struct{
-  app *kingpin.Application
+type CommandLine struct {
+	app *kingpin.Application
 }
 
 func NewCommandLine(version string) (res *CommandLine) {
-  res = &CommandLine{}
-  res.app = kingpin.New("dnsdock", "Automatic DNS for docker containers.")
+	res = &CommandLine{}
+	res.app = kingpin.New("dnsdock", "Automatic DNS for docker containers.")
 	res.app.Version(version)
 	res.app.HelpFlag.Short('h')
-	return
+	return res
 }
 
 // ParseParameters Parse parameters
@@ -42,6 +44,7 @@ func (cmdline *CommandLine) ParseParameters(rawParams []string) (res *utils.Conf
 	tlscacert := cmdline.app.Flag("tlscacert", "Path to CA certificate").Default(res.TlsCaCert).String()
 	tlscert := cmdline.app.Flag("tlscert", "Path to Client certificate").Default(res.TlsCert).String()
 	tlskey := cmdline.app.Flag("tlskey", "Path to client certificate private key").Default(res.TlsKey).String()
+	ipPrefixes := cmdline.app.Flag("ipPrefixes", "Comma separated list of IP prefixes to return").Default("").String()
 	ttl := cmdline.app.Flag("ttl", "TTL for matched requests").Default(strconv.FormatInt(int64(res.Ttl), 10)).Int()
 	createAlias := cmdline.app.Flag("alias", "Automatically create an alias with just the container name.").Default(strconv.FormatBool(res.CreateAlias)).Bool()
 	verbose := cmdline.app.Flag("verbose", "Verbose mode.").Default(strconv.FormatBool(res.Verbose)).Short('v').Bool()
@@ -62,5 +65,6 @@ func (cmdline *CommandLine) ParseParameters(rawParams []string) (res *utils.Conf
 	res.TlsKey = *tlskey
 	res.Ttl = *ttl
 	res.CreateAlias = *createAlias
-	return
+	res.IpPrefixes = strings.Split(*ipPrefixes, ",")
+	return res, err
 }
