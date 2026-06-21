@@ -73,7 +73,7 @@ func main() {
 	httpServer := servers.NewHTTPServer(config, dnsServer)
 	go func() {
 		if err := httpServer.Start(); err != nil {
-			logger.Fatalf("Error: '%s'", err)
+			logger.Errorf("Error: '%s'", err)
 		}
 	}()
 

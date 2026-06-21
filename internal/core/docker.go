@@ -84,11 +84,12 @@ func (d *DockerManager) run(ctx context.Context) error {
 	for _, container := range containers {
 		service, err := d.getService(container.ID)
 		if err != nil {
-			return fmt.Errorf("error getting service: %w", err)
+			logger.Debugf("Skipping container '%s': %s", container.ID[:12], err)
+			continue
 		}
 		err = d.list.AddService(container.ID, *service)
 		if err != nil {
-			return fmt.Errorf("error adding service: %w", err)
+			logger.Warningf("Error adding service for container '%s': %s", container.ID[:12], err)
 		}
 		services[container.ID] = struct{}{}
 	}
@@ -147,11 +148,12 @@ func (d *DockerManager) createHandler(m events.Message) error {
 	if d.config.All {
 		service, err := d.getService(m.ID)
 		if err != nil {
-			return fmt.Errorf("error getting service: %w", err)
+			logger.Debugf("Skipping container '%s': %s", m.ID[:12], err)
+			return nil
 		}
 		err = d.list.AddService(m.ID, *service)
 		if err != nil {
-			return fmt.Errorf("error adding service: %w", err)
+			logger.Warningf("Error adding service for container '%s': %s", m.ID[:12], err)
 		}
 	}
 	return nil
@@ -162,11 +164,12 @@ func (d *DockerManager) startHandler(m events.Message) error {
 	if !d.config.All {
 		service, err := d.getService(m.ID)
 		if err != nil {
-			return fmt.Errorf("error getting service: %w", err)
+			logger.Debugf("Skipping container '%s': %s", m.ID[:12], err)
+			return nil
 		}
 		err = d.list.AddService(m.ID, *service)
 		if err != nil {
-			return fmt.Errorf("error adding service: %w", err)
+			logger.Warningf("Error adding service for container '%s': %s", m.ID[:12], err)
 		}
 	}
 	return nil
@@ -175,10 +178,7 @@ func (d *DockerManager) startHandler(m events.Message) error {
 func (d *DockerManager) stopHandler(m events.Message) error {
 	logger.Debugf("Stopped container '%s'", m.ID)
 	if !d.config.All {
-		err := d.list.RemoveService(m.ID)
-		if err != nil {
-			return fmt.Errorf("error removing service: %w", err)
-		}
+		d.list.RemoveService(m.ID)
 	} else {
 		logger.Debugf("Stopped container '%s' not removed as --all argument is true", m.ID)
 	}
@@ -186,36 +186,32 @@ func (d *DockerManager) stopHandler(m events.Message) error {
 }
 
 func (d *DockerManager) networkHandler(m events.Message) error {
-	logger.Infof("Networks changed of container '%s'", m.Actor.Attributes["container"])
 	id := m.Actor.Attributes["container"]
-	err := d.list.RemoveService(id)
-	if err != nil {
-		return fmt.Errorf("error removing service: %w", err)
-	}
+	logger.Infof("Networks changed of container '%s'", id)
+	d.list.RemoveService(id)
 	service, err := d.getService(id)
 	if err != nil {
-		return fmt.Errorf("error getting service: %w", err)
+		logger.Debugf("Skipping container '%s': %s", id[:12], err)
+		return nil
 	}
-	res := d.list.AddService(id, *service)
-	if res != nil {
-		return fmt.Errorf("error adding service: %w", err)
+	err = d.list.AddService(id, *service)
+	if err != nil {
+		logger.Warningf("Error adding service for container '%s': %s", id[:12], err)
 	}
 	return nil
 }
 
 func (d *DockerManager) renameHandler(m events.Message) error {
 	logger.Debugf("Renamed container '%s'", m.ID)
-	err := d.list.RemoveService(m.ID)
-	if err != nil {
-		return fmt.Errorf("error removing service: %w", err)
-	}
+	d.list.RemoveService(m.ID)
 	service, err := d.getService(m.ID)
 	if err != nil {
-		return fmt.Errorf("error getting service: %w", err)
+		logger.Debugf("Skipping container '%s': %s", m.ID[:12], err)
+		return nil
 	}
-	res := d.list.AddService(m.ID, *service)
-	if res != nil {
-		return fmt.Errorf("error adding service: %w", err)
+	err = d.list.AddService(m.ID, *service)
+	if err != nil {
+		logger.Warningf("Error adding service for container '%s': %s", m.ID[:12], err)
 	}
 	return nil
 }
@@ -223,10 +219,7 @@ func (d *DockerManager) renameHandler(m events.Message) error {
 func (d *DockerManager) destroyHandler(m events.Message) error {
 	logger.Debugf("Destroy container '%s'", m.ID)
 	if d.config.All {
-		err := d.list.RemoveService(m.ID)
-		if err != nil {
-			return fmt.Errorf("error removing service: %w", err)
-		}
+		d.list.RemoveService(m.ID)
 	}
 	return nil
 }
